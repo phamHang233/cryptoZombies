@@ -1,51 +1,53 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import "./zombieattack.sol";
-import "./erc721.sol";
-import "./safemath.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-/// TODO: Replace this with natspec descriptions
-contract ZombieOwnership is ZombieAttack, ERC721ABST {
+contract ZombieFactory is Ownable {
     using SafeMath for uint256;
 
-    mapping(uint => address) zombieApprovals;
+    event NewZombie(uint zombieId, string name, uint dna);
 
-    function balanceOf(
-        address _owner
-    ) external view override returns (uint256) {
-        return ownerZombieCount[_owner];
+    uint dnaDigits = 16;
+    uint dnaModulus = 10 ** dnaDigits;
+    uint cooldownTime = 1 days;
+
+    struct Zombie {
+        string name;
+        uint dna;
+        uint32 level;
+        uint32 readyTime;
+        uint16 winCount;
+        uint16 lossCount;
     }
 
-    function ownerOf(
-        uint256 _tokenId
-    ) external view override returns (address) {
-        return zombieToOwner[_tokenId];
-    }
+    Zombie[] public zombies;
 
-    function _transfer(address _from, address _to, uint256 _tokenId) private {
-        ownerZombieCount[_to] = ownerZombieCount[_to].add(1);
-        ownerZombieCount[msg.sender] = ownerZombieCount[msg.sender].sub(1);
-        zombieToOwner[_tokenId] = _to;
-        emit Transfer(_from, _to, _tokenId);
-    }
+    mapping(uint => address) public zombieToOwner;
+    mapping(address => uint) ownerZombieCount;
 
-    function transferFrom(
-        address _from,
-        address _to,
-        uint256 _tokenId
-    ) external payable override {
-        require(
-            zombieToOwner[_tokenId] == msg.sender ||
-                zombieApprovals[_tokenId] == msg.sender
+    function _createZombie(string memory _name, uint _dna) internal {
+        zombies.push(
+            Zombie(_name, _dna, 1, uint32(block.timestamp + cooldownTime), 0, 0)
         );
-        _transfer(_from, _to, _tokenId);
+        uint256 id = zombies.length.sub(1);
+        zombieToOwner[id] = msg.sender;
+        ownerZombieCount[msg.sender] = ownerZombieCount[msg.sender].add(1);
+        emit NewZombie(id, _name, _dna);
     }
 
-    function approve(
-        address _approved,
-        uint256 _tokenId
-    ) external payable override onlyOwnerOf(_tokenId) {
-        zombieApprovals[_tokenId] = _approved;
-        emit Approval(msg.sender, _approved, _tokenId);
+    function _generateRandomDna(
+        string memory _str
+    ) private view returns (uint) {
+        uint rand = uint(keccak256(abi.encodePacked(_str)));
+        return rand % dnaModulus;
+    }
+
+    function createRandomZombie(string memory _name) public {
+        require(ownerZombieCount[msg.sender] == 0);
+        uint randDna = _generateRandomDna(_name);
+        randDna = randDna - (randDna % 100);
+        _createZombie(_name, randDna);
     }
 }
